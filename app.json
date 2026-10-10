@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Waymark",
+    "slug": "waymark-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.waymark.nativeapp"
+    },
+    "android": {
+      "package": "com.waymark.nativeapp",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#173C2A"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Waymark uses your location to save a spot and help you find your way back."
+        }
+      ],
+      "./plugins/withBackupDisabled"
+    ],
+    "description": "Leave a mark. Find your way.",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F5F6F0"
+    }
+  }
+}
