@@ -30,12 +30,12 @@ The app does not run in Expo Go (MapLibre is a native module).
 `.github/workflows/android.yml` (pinned ubuntu-24.04, hosted Android SDK - do not re-add `android-actions/setup-android`, its sdkmanager call is broken):
 1. TypeScript + unit tests
 2. `expo prebuild` + Gradle `assembleRelease` (release bundle, standard debug test-signing key)
-3. Uploads the built APK + checksum even before the emulator runs, so emulator failures do not lose the build.
-4. Emulator smoke test (`tests/android-smoke.sh`): installs the APK, launches it, grants location, saves a spot, guides to it, force-stops, relaunches, asserts persistence, captures screenshots as the `native-screen-evidence` artifact
-5. On `v*` tags attaches APK + SHA256SUMS to a private GitHub Release only after smoke tests pass
-6. Always writes `build-status.json` to the `ci-status` branch (SHA, status, run URL)
+3. Uploads `waymark-debug-apk` + SHA256SUMS artifact before tests
+4. Tests the existing APK on a separate, clean emulator runner after reserving disk space. `tests/android-smoke.sh` saves a spot, guides to it, checks persistence after relaunch and captures `native-screen-evidence`. The smoke job is capped at 15 minutes.
+5. A manual run can set `reuse_run_id` to an earlier APK artifact run, skipping Gradle. This supports test recovery without rebuilding.
+6. Writes final `build-status.json` to `ci-status` (SHA, outcome, run URL). Build-only success is `pending-smoke`, not final success.
 
-Pushing to main builds an artifact. Tag `v1.0.0` (etc.) to cut a release. The debug-signed APK is for personal testing, not Play distribution.
+Pushing to main builds once with one Gradle command, then tests the artifact. Tags do not trigger another build. Create releases from already-built/tested artifacts; record the build SHA and validation run in release notes. For docs-only changes use `[skip ci]`. The debug-key-signed APK is for personal testing, not Play distribution.
 
 ## Conventions
 

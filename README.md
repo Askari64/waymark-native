@@ -40,3 +40,7 @@ Attribution: © OpenStreetMap contributors, OpenFreeMap. FOSSGIS walking routing
 - `tests/geo.test.ts`: location math, labels, link and corrupted-storage tests.
 - `LIBRARIES.md`: what each library is for.
 - `SECURITY.md`: known upstream dependency audit findings.
+
+## Build once, reuse artifacts
+
+Main pushes run one Gradle `assembleRelease` command, then a separate clean emulator job tests that APK. Tags do not rebuild. A manual workflow dispatch can set `reuse_run_id` to test an existing `waymark-debug-apk` artifact without another build. Release assets come from the tested build; release notes name its SHA and validation run.
