@@ -30,9 +30,10 @@ The app does not run in Expo Go (MapLibre is a native module).
 `.github/workflows/android.yml` (pinned ubuntu-24.04, hosted Android SDK - do not re-add `android-actions/setup-android`, its sdkmanager call is broken):
 1. TypeScript + unit tests
 2. `expo prebuild` + Gradle `assembleRelease` (release bundle, standard debug test-signing key)
-3. Emulator smoke test (`tests/android-smoke.sh`): installs the APK, launches it, grants location, saves a spot, guides to it, force-stops, relaunches, asserts persistence, captures screenshots as the `native-screen-evidence` artifact
-4. Uploads `waymark-debug-apk` artifact; on `v*` tags attaches APK + SHA256SUMS to a private GitHub Release
-5. Always writes `build-status.json` to the `ci-status` branch (SHA, status, run URL)
+3. Uploads the built APK + checksum even before the emulator runs, so emulator failures do not lose the build.
+4. Emulator smoke test (`tests/android-smoke.sh`): installs the APK, launches it, grants location, saves a spot, guides to it, force-stops, relaunches, asserts persistence, captures screenshots as the `native-screen-evidence` artifact
+5. On `v*` tags attaches APK + SHA256SUMS to a private GitHub Release only after smoke tests pass
+6. Always writes `build-status.json` to the `ci-status` branch (SHA, status, run URL)
 
 Pushing to main builds an artifact. Tag `v1.0.0` (etc.) to cut a release. The debug-signed APK is for personal testing, not Play distribution.
 
