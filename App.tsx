@@ -62,6 +62,7 @@ function Main() {
         line: "#30443A",
         green: "#9BE5AF",
         ink: "#11382B",
+        accent: "#9BE5AF",
       }
     : {
         bg: "#F5F6F0",
@@ -71,6 +72,7 @@ function Main() {
         line: "#E0E6DE",
         green: "#B3E6BC",
         ink: "#173C2A",
+        accent: "#173C2A",
       };
   const [spots, setSpots] = useState<Spot[]>(demo ? [example] : []),
     [ready, setReady] = useState(false),
@@ -422,7 +424,7 @@ function Main() {
             <Text style={text(12, c.muted)}>{spots.length} saved</Text>
           </View>
           {!ready ? (
-            <ActivityIndicator color={c.ink} />
+            <ActivityIndicator color={c.accent} />
           ) : spots.length ? (
             spots.map((spot) => (
               <View
@@ -434,7 +436,7 @@ function Main() {
               >
                 <View style={s.row}>
                   <View style={[s.smallPin, { backgroundColor: c.bg }]}>
-                    <Ionicons name="bookmark-outline" size={22} color={c.ink} />
+                    <Ionicons name="bookmark-outline" size={22} color={c.accent} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={text(18, c.text, "700")}>{spot.name}</Text>
@@ -466,8 +468,8 @@ function Main() {
                     accessibilityLabel={`Find ${spot.name}`}
                     style={s.row}
                   >
-                    <Text style={text(14, c.ink, "700")}>Find my way</Text>
-                    <Ionicons name="arrow-forward" size={17} color={c.ink} />
+                    <Text style={text(14, c.accent, "700")}>Find my way</Text>
+                    <Ionicons name="arrow-forward" size={17} color={c.accent} />
                   </Pressable>
                 </View>
               </View>
@@ -522,7 +524,7 @@ function Main() {
               <View
                 style={[s.empty, { borderColor: c.line, marginBottom: 20 }]}
               >
-                <Ionicons name="locate-outline" size={30} color={c.ink} />
+                <Ionicons name="locate-outline" size={30} color={c.accent} />
                 <Text
                   style={[
                     text(15, c.muted),
@@ -662,7 +664,7 @@ function Main() {
                   {distanceLabel(routeDistance ?? metres)}
                 </Text>
                 <View style={{ alignItems: "flex-end", paddingBottom: 6 }}>
-                  <Ionicons name="walk-outline" size={21} color={c.ink} />
+                  <Ionicons name="walk-outline" size={21} color={c.accent} />
                   <Text style={[text(14, c.text, "600"), { marginTop: 5 }]}>
                     ~{walkLabel(routeDistance ?? metres)} min walk
                   </Text>
@@ -791,7 +793,7 @@ function Main() {
       >
         <View style={s.modal}>
           <View style={[s.dialog, { backgroundColor: c.surface }]}>
-            <Ionicons name="map-outline" size={32} color={c.ink} />
+            <Ionicons name="map-outline" size={32} color={c.accent} />
             <Text style={[text(24, c.text, "700"), { marginTop: 20 }]}>
               Take the walking route?
             </Text>
