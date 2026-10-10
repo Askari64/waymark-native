@@ -33,13 +33,22 @@
           "locationWhenInUsePermission": "Waymark uses your location to save a spot and help you find your way back."
         }
       ],
-      "./plugins/withBackupDisabled"
+      "./plugins/withBackupDisabled",
+      "expo-font",
+      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 120,
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F6F0",
+          "dark": {
+            "backgroundColor": "#101C19"
+          }
+        }
+      ]
     ],
-    "description": "Leave a mark. Find your way.",
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F5F6F0"
-    }
+    "description": "Leave a mark. Find your way."
   }
 }
