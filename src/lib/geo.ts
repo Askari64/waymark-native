@@ -38,3 +38,5 @@ export function validSpot(s: unknown): s is Spot {
     Number.isFinite(p.createdAt)
   );
 }
+export const routeSummary = (m: number) =>
+  `${walkLabel(m)} min · ${distanceLabel(m)}`;

@@ -10,9 +10,17 @@ export type MapProps = {
   point: Point;
   target?: Point;
   route?: number[][];
+  // Other route options, drawn muted underneath the selected route.
+  others?: number[][][];
   dark?: boolean;
 };
-export default function SpotMap({ point, target, route, dark }: MapProps) {
+export default function SpotMap({
+  point,
+  target,
+  route,
+  others,
+  dark,
+}: MapProps) {
   const dots: GeoJSON.FeatureCollection = {
     type: "FeatureCollection",
     features: [point, ...(target ? [target] : [])].map((p, i) => ({
@@ -43,6 +51,30 @@ export default function SpotMap({ point, target, route, dark }: MapProps) {
             : { center: [point.lng, point.lat], zoom: 16 }
         }
       />
+      {others && others.length > 0 && (
+        <GeoJSONSource
+          id="route-others"
+          data={{
+            type: "FeatureCollection",
+            features: others.map((coordinates) => ({
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates },
+            })),
+          }}
+        >
+          <Layer
+            id="route-others-line"
+            type="line"
+            paint={{
+              "line-color": dark ? "#7C8F84" : "#8A9A90",
+              "line-width": 4,
+              "line-opacity": 0.7,
+            }}
+            layout={{ "line-cap": "round", "line-join": "round" }}
+          />
+        </GeoJSONSource>
+      )}
       {route && route.length > 1 && (
         <GeoJSONSource
           id="route"

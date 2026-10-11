@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,13 +26,21 @@ import {
   distance,
   distanceLabel,
   mapsUrl,
+  routeSummary,
   validSpot,
   walkLabel,
   type Point,
   type Spot,
 } from "./src/lib/geo";
+import {
+  buildOptions,
+  parseRoutes,
+  routeUrl,
+  type RouteOption,
+} from "./src/lib/routes";
 
 const KEY = "waymark.spots.v1";
+const ON_GREEN = "#173C2A"; // ink on the mint accent, readable in both themes
 const demo =
   Platform.OS === "web" &&
   typeof window !== "undefined" &&
@@ -84,8 +92,8 @@ function Main() {
     [name, setName] = useState(""),
     [note, setNote] = useState(""),
     [saving, setSaving] = useState(false),
-    [route, setRoute] = useState<number[][]>(),
-    [routeDistance, setRouteDistance] = useState<number>(),
+    [options, setOptions] = useState<RouteOption[]>([]),
+    [pickedId, setPickedId] = useState<string>(),
     [routeStatus, setRouteStatus] = useState("Straight-line estimate"),
     [online, setOnline] = useState(false),
     [consent, setConsent] = useState(false),
@@ -218,6 +226,14 @@ function Main() {
     return () => sub.remove();
   }, [screen]);
   const [origin, setOrigin] = routeOrigin;
+  const activeRoute = options.find((o) => o.id === pickedId) ?? options[0];
+  const route = activeRoute?.coords;
+  const routeDistance = activeRoute?.distance;
+  // Memoised so the web map does not rebuild on every render.
+  const otherRoutes = useMemo(
+    () => options.filter((o) => o.id !== activeRoute?.id).map((o) => o.coords),
+    [options, activeRoute?.id],
+  );
   useEffect(() => {
     if (
       screen === "guide" &&
@@ -237,41 +253,37 @@ function Main() {
     lastRoute.current = Date.now();
     lastOrigin.current = origin;
     setRouteStatus("Finding a walking route…");
-    fetch(
-      `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${origin.lng},${origin.lat};${selected.lng},${selected.lat}?overview=full&geometries=geojson`,
-      {
+    const get = (kind: "walk" | "road") =>
+      fetch(routeUrl(kind, origin, selected), {
         signal: ctrl.signal,
         headers: { "User-Agent": "WaymarkNative/1.0 (personal spot finder)" },
-      },
-    )
-      .then((r) => {
+      }).then((r) => {
         if (!r.ok) throw Error();
         return r.json();
-      })
-      .then((data) => {
-        const r = data.routes?.[0];
-        if (
-          !r ||
-          !Array.isArray(r.geometry?.coordinates) ||
-          !Number.isFinite(r.distance) ||
-          !r.geometry.coordinates.every(
-            (v: unknown) =>
-              Array.isArray(v) &&
-              v.length >= 2 &&
-              Number.isFinite(v[0]) &&
-              Number.isFinite(v[1]) &&
-              Math.abs(v[0]) <= 180 &&
-              Math.abs(v[1]) <= 90,
-          )
-        )
-          throw Error();
-        setRoute(r.geometry.coordinates);
-        setRouteDistance(r.distance);
-        setRouteStatus("Walking route · approximate");
+      });
+    // Walking alternatives are required. The main-road route is a bonus: if it
+    // fails, the walking options still show.
+    Promise.all([
+      get("walk"),
+      get("road").then(
+        (d) => parseRoutes(d, "road")[0],
+        () => undefined,
+      ),
+    ])
+      .then(([walkData, road]) => {
+        const next = buildOptions(parseRoutes(walkData, "walk"), road);
+        if (next.length === 0) throw Error();
+        setOptions(next);
+        setPickedId((id) => (next.some((o) => o.id === id) ? id : next[0].id));
+        setRouteStatus(
+          next.length > 1
+            ? `${next.length} routes found · pick one`
+            : "Walking route · approximate",
+        );
       })
       .catch(() => {
-        setRoute(undefined);
-        setRouteDistance(undefined);
+        setOptions([]);
+        setPickedId(undefined);
         setRouteStatus("Route unavailable · straight-line estimate");
       })
       .finally(() => clearTimeout(timeout));
@@ -316,8 +328,8 @@ function Main() {
     setOnline(false);
     setOrigin(null);
     setSelected(spot);
-    setRoute(undefined);
-    setRouteDistance(undefined);
+    setOptions([]);
+    setPickedId(undefined);
     setRouteStatus("Straight-line estimate");
     lastOrigin.current = null;
     setScreen("guide");
@@ -642,6 +654,7 @@ function Main() {
                       ]
                     : undefined)
                 }
+                others={otherRoutes}
                 dark={dark}
               />
             )}
@@ -675,12 +688,65 @@ function Main() {
                 Connect location to guide back.
               </Text>
             )}
+            {options.length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 12 }}
+                contentContainerStyle={{ gap: 8 }}
+                accessibilityRole="radiogroup"
+              >
+                {options.map((o) => {
+                  const on = o.id === activeRoute?.id;
+                  return (
+                    <Pressable
+                      key={o.id}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`${o.label} route, ${routeSummary(o.distance)}`}
+                      onPress={() => setPickedId(o.id)}
+                      style={({ pressed }) => [
+                        s.routeChip,
+                        {
+                          backgroundColor: on ? c.green : c.surface,
+                          borderColor: on ? c.accent : c.line,
+                          opacity: pressed ? 0.75 : 1,
+                        },
+                      ]}
+                    >
+                      <View style={s.row}>
+                        {o.id === options[0].id && (
+                          <Ionicons
+                            name="star"
+                            size={12}
+                            color={on ? ON_GREEN : c.accent}
+                          />
+                        )}
+                        <Text style={text(13, on ? ON_GREEN : c.text, "700")}>
+                          {o.label}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          text(12, on ? ON_GREEN : c.muted),
+                          { marginTop: 2 },
+                        ]}
+                      >
+                        {routeSummary(o.distance)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
             <Text
               style={[text(12, c.muted), { marginBottom: 15, lineHeight: 18 }]}
             >
               {stale
                 ? "Location stale · refresh before following"
-                : routeStatus}
+                : activeRoute?.kind === "road"
+                  ? "Main road route · follows roads built for cars. Check for safe walking paths."
+                  : routeStatus}
               {metres !== null && metres < 25
                 ? " · You’re close. Check your surroundings."
                 : ""}
@@ -737,12 +803,12 @@ function Main() {
             removes its spots. Android backup is disabled.{"\n\n"}Maps are
             online: OpenFreeMap receives tile requests and your IP address,
             which can reveal the area you’re viewing. Walking routes are
-            optional: FOSSGIS receives your current and saved coordinates and
-            logs route requests. Opening Google Maps shares your destination
-            with Google.{"\n\n"}GPS, distances, and walking estimates can be
-            wrong. This is not a safety or emergency navigation tool. Check
-            paths, signs, traffic, and local access rules. Maps and routing need
-            internet and may be unavailable.
+            optional: FOSSGIS receives your current and saved coordinates (for
+            walking and main-road routes) and logs route requests. Opening
+            Google Maps shares your destination with Google.{"\n\n"}GPS,
+            distances, and walking estimates can be wrong. This is not a safety
+            or emergency navigation tool. Check paths, signs, traffic, and local
+            access rules. Maps and routing need internet and may be unavailable.
           </Text>
           <View style={{ marginTop: 28 }}>
             {button(
@@ -795,7 +861,7 @@ function Main() {
           <View style={[s.dialog, { backgroundColor: c.surface }]}>
             <Ionicons name="map-outline" size={32} color={c.accent} />
             <Text style={[text(24, c.text, "700"), { marginTop: 20 }]}>
-              Take the walking route?
+              Find routes back?
             </Text>
             <Text
               style={[
@@ -803,8 +869,9 @@ function Main() {
                 { lineHeight: 23, marginTop: 12, marginBottom: 24 },
               ]}
             >
-              The route service receives your current position and destination.
-              It logs requests. Your notes and saved list stay on your device.
+              The route service receives your current position and destination
+              (two requests: walking routes and a main-road route). It logs
+              requests. Your notes and saved list stay on your device.
             </Text>
             {button("Use online routing", () => {
               setConsent(false);
@@ -906,6 +973,13 @@ const s = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
     marginBottom: 15,
+  },
+  routeChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    minWidth: 96,
   },
   guideCard: {
     paddingHorizontal: 24,

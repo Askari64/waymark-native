@@ -8,9 +8,10 @@ type Props = {
   point: Point;
   target?: Point;
   route?: number[][];
+  others?: number[][][];
   dark?: boolean;
 };
-export default function SpotMap({ point, target, route, dark }: Props) {
+export default function SpotMap({ point, target, route, others, dark }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current) return;
@@ -37,6 +38,29 @@ export default function SpotMap({ point, target, route, dark }: Props) {
         .setLngLat([target.lng, target.lat])
         .addTo(map);
     map.on("load", () => {
+      if (others && others.length > 0) {
+        map.addSource("route-others", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: others.map((coordinates) => ({
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates },
+            })),
+          },
+        });
+        map.addLayer({
+          id: "route-others",
+          type: "line",
+          source: "route-others",
+          paint: {
+            "line-color": dark ? "#7C8F84" : "#8A9A90",
+            "line-width": 4,
+            "line-opacity": 0.7,
+          },
+        });
+      }
       if (route && route.length > 1) {
         map.addSource("route", {
           type: "geojson",
@@ -55,6 +79,6 @@ export default function SpotMap({ point, target, route, dark }: Props) {
       }
     });
     return () => map.remove();
-  }, [point.lat, point.lng, target?.lat, target?.lng, route, dark]);
+  }, [point.lat, point.lng, target?.lat, target?.lng, route, others, dark]);
   return <div ref={ref} style={{ width: "100%", height: "100%", flex: 1 }} />;
 }
