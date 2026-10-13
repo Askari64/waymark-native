@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   BackHandler,
   KeyboardAvoidingView,
   Linking,
@@ -19,7 +18,8 @@ import {
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
+import { useLocation } from "./src/lib/useLocation";
+import { freshPoint } from "./src/lib/location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import SpotMap from "./src/components/SpotMap";
 import {
@@ -85,7 +85,6 @@ function Main() {
   const [spots, setSpots] = useState<Spot[]>(demo ? [example] : []),
     [ready, setReady] = useState(false),
     [storageFailed, setStorageFailed] = useState(false),
-    [position, setPosition] = useState<Point | null>(demo ? sample : null),
     [error, setError] = useState(""),
     [screen, setScreen] = useState<"home" | "save" | "guide" | "about">("home"),
     [selected, setSelected] = useState<Spot | null>(null),
@@ -96,10 +95,11 @@ function Main() {
     [pickedId, setPickedId] = useState<string>(),
     [routeStatus, setRouteStatus] = useState("Straight-line estimate"),
     [online, setOnline] = useState(false),
-    [consent, setConsent] = useState(false),
-    [busy, setBusy] = useState(false);
-  const watch = useRef<Location.LocationSubscription | null>(null),
-    lastRoute = useRef(0),
+    [consent, setConsent] = useState(false);
+  const { position, busy, locationError, locate, stale } = useLocation(
+    screen === "save" || screen === "guide", demo, demo ? sample : null,
+  );
+  const lastRoute = useRef(0),
     lastOrigin = useRef<Point | null>(null),
     routeOrigin = useState<Point | null>(null);
   const text = (
@@ -159,62 +159,6 @@ function Main() {
       active = false;
     };
   }, []);
-  async function locate() {
-    if (demo) return;
-    setBusy(true);
-    setError("");
-    try {
-      const p = await Location.requestForegroundPermissionsAsync();
-      if (p.status !== "granted") {
-        setError(
-          "Location is off. Allow it in Settings to save a spot or find your way back.",
-        );
-        return;
-      }
-      watch.current?.remove();
-      const fix = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      setPosition({
-        lat: fix.coords.latitude,
-        lng: fix.coords.longitude,
-        accuracy: fix.coords.accuracy ?? undefined,
-        timestamp: fix.timestamp,
-      });
-      watch.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 5,
-          timeInterval: 5000,
-        },
-        (l) =>
-          setPosition({
-            lat: l.coords.latitude,
-            lng: l.coords.longitude,
-            accuracy: l.coords.accuracy ?? undefined,
-            timestamp: l.timestamp,
-          }),
-      );
-    } catch {
-      setError(
-        "No location fix yet. Check location services and try again outdoors.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active") {
-        watch.current?.remove();
-        watch.current = null;
-      } else if (position && !demo) void locate();
-    });
-    return () => {
-      sub.remove();
-      watch.current?.remove();
-    };
-  }, [!!position]);
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (screen !== "home") {
@@ -261,33 +205,32 @@ function Main() {
         if (!r.ok) throw Error();
         return r.json();
       });
-    // Walking alternatives are required. The main-road route is a bonus: if it
-    // fails, the walking options still show.
-    Promise.all([
-      get("walk"),
-      get("road").then(
-        (d) => parseRoutes(d, "road")[0],
-        () => undefined,
-      ),
-    ])
-      .then(([walkData, road]) => {
-        const next = buildOptions(parseRoutes(walkData, "walk"), road);
-        if (next.length === 0) throw Error();
-        setOptions(next);
-        setPickedId((id) => (next.some((o) => o.id === id) ? id : next[0].id));
-        setRouteStatus(
-          next.length > 1
-            ? `${next.length} routes found · pick one`
-            : "Walking route · approximate",
-        );
-      })
-      .catch(() => {
-        setOptions([]);
-        setPickedId(undefined);
+    let cancelled = false;
+    let walking: RouteOption[] | undefined;
+    let road: RouteOption | undefined;
+    const publish = () => {
+      if (cancelled || !walking) return;
+      const next = buildOptions(walking, road);
+      if (!next.length) {
+        setOptions([]); setPickedId(undefined);
         setRouteStatus("Route unavailable · straight-line estimate");
-      })
-      .finally(() => clearTimeout(timeout));
+        return;
+      }
+      setOptions(next);
+      setPickedId((id) => next.some((o) => o.id === id) ? id : next[0].id);
+      setRouteStatus(next.length > 1 ? `${next.length} routes found · pick one` : "Walking route · approximate");
+    };
+    // Walking routes render immediately; a slower optional road response cannot
+    // hold them back. Cancellation blocks results from old guide sessions.
+    const walkRequest = get("walk").then((data) => {
+      walking = parseRoutes(data, "walk"); publish();
+    }, () => { walking = []; publish(); });
+    const roadRequest = get("road").then((data) => {
+      road = parseRoutes(data, "road")[0]; publish();
+    }, () => {});
+    void Promise.all([walkRequest, roadRequest]).finally(() => clearTimeout(timeout));
     return () => {
+      cancelled = true;
       ctrl.abort();
       clearTimeout(timeout);
     };
@@ -299,7 +242,7 @@ function Main() {
   }
   async function save() {
     if (!position || !name.trim() || saving || storageFailed || !ready) return;
-    if (!demo && Date.now() - (position.timestamp ?? 0) > 60000) {
+    if (!demo && !freshPoint(position)) {
       setError("Location is stale. Refresh it before saving.");
       return;
     }
@@ -351,14 +294,15 @@ function Main() {
       ]);
   }
   const metres = selected && position ? distance(position, selected) : null;
-  const stale =
-    position && !demo && Date.now() - (position.timestamp ?? 0) > 60000;
   const gps = busy
     ? "Finding your location"
     : position
-      ? `Location ready · ±${Math.round(position.accuracy ?? 0)} m`
+      ? `${stale ? "Location stale" : "Location ready"} · ±${Math.round(position.accuracy ?? 0)} m`
       : "Location not connected";
   const mapPoint = position ?? selected;
+  const mapRoute = useMemo(() => route ?? (position && selected
+    ? [[position.lng, position.lat], [selected.lng, selected.lat]] : undefined),
+    [route, position?.lat, position?.lng, selected?.lat, selected?.lng]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       <StatusBar style={dark ? "light" : "dark"} />
@@ -562,7 +506,6 @@ function Main() {
               style={[text(11, c.muted), { marginTop: 12, marginBottom: 24 }]}
             >
               {gps}
-              {stale ? " · stale" : ""}
             </Text>
             <Text style={text(12, c.muted, "700")}>SPOT NAME</Text>
             <TextInput
@@ -600,6 +543,7 @@ function Main() {
                 },
               ]}
             />
+            {!name.trim() && <Text style={[text(12, c.muted), { marginTop: 16 }]}>Add a spot name to save.</Text>}
             <View style={{ marginTop: 28 }}>
               {button(
                 saving ? "Saving…" : "Keep this spot",
@@ -645,15 +589,7 @@ function Main() {
                 key={`${selected.id}-${!!position}`}
                 point={mapPoint}
                 target={selected}
-                route={
-                  route ??
-                  (position
-                    ? [
-                        [position.lng, position.lat],
-                        [selected.lng, selected.lat],
-                      ]
-                    : undefined)
-                }
+                route={mapRoute}
                 others={otherRoutes}
                 dark={dark}
               />
@@ -751,9 +687,8 @@ function Main() {
                 ? " · You’re close. Check your surroundings."
                 : ""}
             </Text>
-            {!position &&
-              button(
-                "Use my location",
+            {button(
+                position ? "Refresh location" : "Use my location",
                 () => void locate(),
                 "locate-outline",
                 true,
@@ -830,7 +765,7 @@ function Main() {
           </View>
         </ScrollView>
       )}
-      {!!error && (
+      {!!(error || locationError) && (
         <View
           style={[s.error, { backgroundColor: dark ? "#512D25" : "#FFF1E5" }]}
         >
@@ -841,14 +776,14 @@ function Main() {
               { flex: 1, lineHeight: 19 },
             ]}
           >
-            {error}
+            {error || locationError}
           </Text>
-          <Pressable
+          {!!error && <Pressable
             onPress={() => setError("")}
             accessibilityLabel="Dismiss error"
           >
             <Ionicons name="close" size={19} color={c.muted} />
-          </Pressable>
+          </Pressable>}
         </View>
       )}
       <Modal
