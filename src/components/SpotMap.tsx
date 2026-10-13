@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import {
   Map,
   Camera,
@@ -14,21 +14,28 @@ export type MapProps = {
   others?: number[][][];
   dark?: boolean;
 };
-export default function SpotMap({
+function SpotMap({
   point,
   target,
   route,
   others,
   dark,
 }: MapProps) {
-  const dots: GeoJSON.FeatureCollection = {
+  const dots = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: [point, ...(target ? [target] : [])].map((p, i) => ({
       type: "Feature",
       properties: { target: i },
       geometry: { type: "Point", coordinates: [p.lng, p.lat] },
     })),
-  };
+  }), [point.lat, point.lng, target?.lat, target?.lng]);
+  const camera = useMemo(() => target ? { bounds: [
+    Math.min(point.lng, target.lng) - 0.001, Math.min(point.lat, target.lat) - 0.001,
+    Math.max(point.lng, target.lng) + 0.001, Math.max(point.lat, target.lat) + 0.001,
+  ] as [number, number, number, number] } : { center: [point.lng, point.lat] as [number, number], zoom: 16 },
+  [point.lat, point.lng, target?.lat, target?.lng]);
+  const alternateData = useMemo<GeoJSON.FeatureCollection>(() => ({ type: "FeatureCollection", features: (others ?? []).map((coordinates) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates } })) }), [others]);
+  const routeData = useMemo<GeoJSON.Feature>(() => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route ?? [] } }), [route]);
   return (
     <Map
       style={{ flex: 1 }}
@@ -37,31 +44,11 @@ export default function SpotMap({
       logo={false}
       compass={false}
     >
-      <Camera
-        initialViewState={
-          target
-            ? {
-                bounds: [
-                  Math.min(point.lng, target.lng) - 0.001,
-                  Math.min(point.lat, target.lat) - 0.001,
-                  Math.max(point.lng, target.lng) + 0.001,
-                  Math.max(point.lat, target.lat) + 0.001,
-                ],
-              }
-            : { center: [point.lng, point.lat], zoom: 16 }
-        }
-      />
+      <Camera initialViewState={camera} />
       {others && others.length > 0 && (
         <GeoJSONSource
           id="route-others"
-          data={{
-            type: "FeatureCollection",
-            features: others.map((coordinates) => ({
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates },
-            })),
-          }}
+          data={alternateData}
         >
           <Layer
             id="route-others-line"
@@ -78,11 +65,7 @@ export default function SpotMap({
       {route && route.length > 1 && (
         <GeoJSONSource
           id="route"
-          data={{
-            type: "Feature",
-            properties: {},
-            geometry: { type: "LineString", coordinates: route },
-          }}
+          data={routeData}
         >
           <Layer
             id="route-line"
@@ -126,3 +109,6 @@ export default function SpotMap({
     </Map>
   );
 }
+
+
+export default memo(SpotMap);
