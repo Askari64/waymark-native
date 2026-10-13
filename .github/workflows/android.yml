@@ -2,10 +2,17 @@ name: Android APK
 on:
   push:
     branches: [main]
+    # Workflow-only edits don't need a build. Path filters are ignored for tag pushes.
+    paths-ignore: ['.github/workflows/android.yml']
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       reuse_run_id:
         description: Existing run containing waymark-debug-apk (skip rebuilding)
+        required: false
+        type: string
+      release_tag:
+        description: Existing release tag to attach the APK to (e.g. v1.2.0)
         required: false
         type: string
 permissions:
@@ -39,8 +46,10 @@ jobs:
       - name: Name APK and checksum
         run: |
           mkdir -p release
-          cp android/app/build/outputs/apk/release/app-release.apk release/waymark-1.1.0-debug.apk
-          cd release && sha256sum waymark-1.1.0-debug.apk > SHA256SUMS.txt
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="${GITHUB_SHA::7}"; fi
+          APK="waymark-${VERSION}-debug.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "release/$APK"
+          cd release && sha256sum "$APK" > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: waymark-debug-apk
@@ -94,7 +103,7 @@ jobs:
           cd release && sha256sum -c SHA256SUMS.txt
           cd ..
           mkdir -p android/app/build/outputs/apk/release
-          cp release/waymark-1.1.0-debug.apk android/app/build/outputs/apk/release/app-release.apk
+          cp release/waymark-*-debug.apk android/app/build/outputs/apk/release/app-release.apk
       - name: Enable KVM for native smoke test
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -128,3 +137,28 @@ jobs:
           old_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/build-status.json?ref=ci-status" --jq .sha)
           encoded=$(base64 -w0 build-status.json)
           gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/build-status.json" -f message="Record Android smoke outcome" -f content="$encoded" -f branch=ci-status -f sha="$old_sha" >/dev/null
+  release:
+    # Attach the built APK to the GitHub Release for a tag (or a chosen existing tag via workflow_dispatch).
+    needs: build
+    if: ${{ always() && (needs.build.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.reuse_run_id != '')) && (github.ref_type == 'tag' || inputs.release_tag != '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: waymark-debug-apk
+          path: release
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.reuse_run_id || github.run_id }}
+      - name: Upload APK to the release
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" release/*.apk release/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
