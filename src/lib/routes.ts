@@ -63,11 +63,26 @@ export function parseRoutes(data: unknown, kind: RouteKind): RouteOption[] {
 function overlap(a: number[][], b: number[][]) {
   const s = a.length <= b.length ? a : b;
   const other = s === a ? b : a;
-  const hit = s.filter((p) =>
-    other.some(
-      (q) => Math.abs(p[0] - q[0]) < 0.0003 && Math.abs(p[1] - q[1]) < 0.0003,
-    ),
-  ).length;
+  const cell = 0.0003;
+  const buckets = new Map<string, number[][]>();
+  for (const q of other) {
+    const key = `${Math.floor(q[0] / cell)},${Math.floor(q[1] / cell)}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(q);
+    else buckets.set(key, [q]);
+  }
+  let hit = 0;
+  for (const p of s) {
+    const x = Math.floor(p[0] / cell), y = Math.floor(p[1] / cell);
+    let found = false;
+    for (let dx = -1; dx <= 1 && !found; dx++) {
+      for (let dy = -1; dy <= 1 && !found; dy++) {
+        found = !!buckets.get(`${x + dx},${y + dy}`)?.some((q) =>
+          Math.abs(p[0] - q[0]) < cell && Math.abs(p[1] - q[1]) < cell);
+      }
+    }
+    if (found) hit++;
+  }
   return hit / s.length;
 }
 

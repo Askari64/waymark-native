@@ -42,6 +42,8 @@ tap_label 'Spot note'
 adb shell input text 'Level_2_blue_lift'
 adb shell input keyevent 4
 capture save-filled
+grep -q 'Location ready' ../native-evidence/save-filled.xml
+! grep -q 'Getting a fix' ../native-evidence/save-filled.xml
 tap_label 'Keep this spot'
 sleep 2
 capture home-saved

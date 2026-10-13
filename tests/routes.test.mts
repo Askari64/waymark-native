@@ -95,3 +95,20 @@ test("option summary uses the app walking estimate", () => {
   assert.equal(routeSummary(o.distance), "10 min · 830 m");
   assert.equal(routeSummary(2500), "30 min · 2.5 km");
 });
+
+
+test("spatial duplicate detection matches pairwise reference including negative cell boundaries", () => {
+  const overlap = (a: number[][], b: number[][]) => {
+    const s = a.length <= b.length ? a : b, other = s === a ? b : a;
+    return s.filter((p) => other.some((q) => Math.abs(p[0]-q[0]) < 0.0003 && Math.abs(p[1]-q[1]) < 0.0003)).length / s.length;
+  };
+  let seed = 7;
+  const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let n = 0; n < 100; n++) {
+    const a = Array.from({length:50}, () => [(random() - 0.5) * 0.003, (random() - 0.5) * 0.003]);
+    const b = n % 2 ? a.map((p) => [p[0] + 0.00001, p[1] - 0.00001])
+      : Array.from({length:70}, () => [(random() - 0.5) * 0.003, (random() - 0.5) * 0.003]);
+    const routes = [a,b].map((coords,i) => ({id:`walk-${i}`,kind:'walk' as const,label:'',coords,distance:1000}));
+    assert.equal(buildOptions(routes,undefined).length, overlap(a,b) < 0.9 ? 2 : 1);
+  }
+});
