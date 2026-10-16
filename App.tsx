@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocation } from "./src/lib/useLocation";
 import { freshPoint } from "./src/lib/location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -25,6 +25,8 @@ import SpotMap from "./src/components/SpotMap";
 import {
   distance,
   distanceLabel,
+  driveLabel,
+  durationMinutes,
   mapsUrl,
   routeSummary,
   validSpot,
@@ -95,7 +97,9 @@ function Main() {
     [pickedId, setPickedId] = useState<string>(),
     [routeStatus, setRouteStatus] = useState("Straight-line estimate"),
     [online, setOnline] = useState(false),
-    [consent, setConsent] = useState(false);
+    [consent, setConsent] = useState(false),
+    [mode, setMode] = useState<"walk" | "moto" | "car">("walk"),
+    [roadRoute, setRoadRoute] = useState<RouteOption | null>(null);
   const { position, busy, locationError, locate, stale } = useLocation(
     screen === "save" || screen === "guide", demo, demo ? sample : null,
   );
@@ -196,7 +200,7 @@ function Main() {
     const timeout = setTimeout(() => ctrl.abort(), 15000);
     lastRoute.current = Date.now();
     lastOrigin.current = origin;
-    setRouteStatus("Finding a walking route…");
+    setRouteStatus("Finding a route…");
     const get = (kind: "walk" | "road") =>
       fetch(routeUrl(kind, origin, selected), {
         signal: ctrl.signal,
@@ -218,7 +222,7 @@ function Main() {
       }
       setOptions(next);
       setPickedId((id) => next.some((o) => o.id === id) ? id : next[0].id);
-      setRouteStatus(next.length > 1 ? `${next.length} routes found · pick one` : "Walking route · approximate");
+      setRouteStatus(next.length > 1 ? `${next.length} routes found · pick one` : "Route · approximate");
     };
     // Walking routes render immediately; a slower optional road response cannot
     // hold them back. Cancellation blocks results from old guide sessions.
@@ -226,8 +230,10 @@ function Main() {
       walking = parseRoutes(data, "walk"); publish();
     }, () => { walking = []; publish(); });
     const roadRequest = get("road").then((data) => {
-      road = parseRoutes(data, "road")[0]; publish();
-    }, () => {});
+      road = parseRoutes(data, "road")[0];
+      setRoadRoute(road ?? null);
+      publish();
+    }, () => { setRoadRoute(null); });
     void Promise.all([walkRequest, roadRequest]).finally(() => clearTimeout(timeout));
     return () => {
       cancelled = true;
@@ -272,6 +278,7 @@ function Main() {
     setOrigin(null);
     setSelected(spot);
     setOptions([]);
+    setRoadRoute(null);
     setPickedId(undefined);
     setRouteStatus("Straight-line estimate");
     lastOrigin.current = null;
@@ -294,6 +301,19 @@ function Main() {
       ]);
   }
   const metres = selected && position ? distance(position, selected) : null;
+  // Total time per travel mode. Walk uses the best foot route; there is no
+  // public motorcycle routing profile, so motorcycle shows the car estimate.
+  const walkOption = options.find((o) => o.kind === "walk");
+  const walkMinutes =
+    walkOption?.duration != null
+      ? durationMinutes(walkOption.duration)
+      : walkLabel(walkOption?.distance ?? metres ?? 0);
+  const carMinutes =
+    roadRoute?.duration != null
+      ? durationMinutes(roadRoute.duration)
+      : driveLabel(roadRoute?.distance ?? metres ?? 0);
+  const modeMinutes = mode === "walk" ? walkMinutes : carMinutes;
+  const modeUnit = mode === "walk" ? "walk" : mode === "moto" ? "by bike" : "by car";
   const gps = busy
     ? "Finding your location"
     : position
@@ -613,9 +633,50 @@ function Main() {
                   {distanceLabel(routeDistance ?? metres)}
                 </Text>
                 <View style={{ alignItems: "flex-end", paddingBottom: 6 }}>
-                  <Ionicons name="walk-outline" size={21} color={c.accent} />
-                  <Text style={[text(14, c.text, "600"), { marginTop: 5 }]}>
-                    ~{walkLabel(routeDistance ?? metres)} min walk
+                  <View style={[s.row, { gap: 6 }]}>
+                    {(
+                      [
+                        { id: "walk", icon: "walk-outline", hint: "walking" },
+                        { id: "moto", icon: "motorbike", hint: "motorcycle" },
+                        { id: "car", icon: "car-outline", hint: "driving" },
+                      ] as const
+                    ).map((m) => {
+                      const on = mode === m.id;
+                      return (
+                        <Pressable
+                          key={m.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Show ${m.hint} time`}
+                          accessibilityState={{ selected: on }}
+                          onPress={() => setMode(m.id)}
+                          style={({ pressed }) => [
+                            s.modeChip,
+                            {
+                              backgroundColor: on ? c.green : "transparent",
+                              borderColor: on ? c.accent : c.line,
+                              opacity: pressed ? 0.75 : 1,
+                            },
+                          ]}
+                        >
+                          {m.id === "moto" ? (
+                            <MaterialCommunityIcons
+                              name="motorbike"
+                              size={17}
+                              color={on ? ON_GREEN : c.muted}
+                            />
+                          ) : (
+                            <Ionicons
+                              name={m.icon}
+                              size={17}
+                              color={on ? ON_GREEN : c.muted}
+                            />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={[text(14, c.text, "600"), { marginTop: 6 }]}>
+                    ~{modeMinutes} min {modeUnit}
                   </Text>
                 </View>
               </View>
@@ -697,7 +758,7 @@ function Main() {
             {position &&
               !online &&
               button(
-                "Show walking route",
+                "Show route",
                 () => setConsent(true),
                 "map-outline",
                 false,
@@ -706,7 +767,9 @@ function Main() {
             {button(
               "Open in Google Maps",
               () =>
-                void Linking.openURL(mapsUrl(selected)).catch(() =>
+                void Linking.openURL(
+                  mapsUrl(selected, mode === "walk" ? "walking" : "driving"),
+                ).catch(() =>
                   setError(
                     "Could not open Maps. Please check your connection.",
                   ),
@@ -731,17 +794,17 @@ function Main() {
         <ScrollView contentContainerStyle={s.scroll}>
           <Text style={text(35, c.text, "800")}>A little less lost.</Text>
           <Text style={[text(16, c.muted), { lineHeight: 25, marginTop: 20 }]}>
-            Waymark 1.0.0{"\n\n"}Save a place. Find your way back. No account,
+            Waymark 1.3.0{"\n\n"}Save a place. Find your way back. No account,
             ads, analytics, or direction arrow. Location is only used while the
             app is open.{"\n\n"}Your saved coordinates and notes stay in this
             app’s device storage. They are not encrypted. Removing the app
             removes its spots. Android backup is disabled.{"\n\n"}Maps are
             online: OpenFreeMap receives tile requests and your IP address,
-            which can reveal the area you’re viewing. Walking routes are
+            which can reveal the area you’re viewing. Online routes are
             optional: FOSSGIS receives your current and saved coordinates (for
-            walking and main-road routes) and logs route requests. Opening
+            footpath and main-road routes) and logs route requests. Opening
             Google Maps shares your destination with Google.{"\n\n"}GPS,
-            distances, and walking estimates can be wrong. This is not a safety
+            distances, and travel-time estimates can be wrong. This is not a safety
             or emergency navigation tool. Check paths, signs, traffic, and local
             access rules. Maps and routing need internet and may be unavailable.
           </Text>
@@ -805,7 +868,7 @@ function Main() {
               ]}
             >
               The route service receives your current position and destination
-              (two requests: walking routes and a main-road route). It logs
+              (two requests: routes on footpaths and one along main roads). It logs
               requests. Your notes and saved list stay on your device.
             </Text>
             {button("Use online routing", () => {
@@ -916,6 +979,14 @@ const s = StyleSheet.create({
     paddingVertical: 9,
     minWidth: 96,
   },
+  modeChip: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   guideCard: {
     paddingHorizontal: 24,
     paddingTop: 22,
@@ -944,3 +1015,4 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
