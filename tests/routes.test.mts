@@ -8,8 +8,9 @@ const line = (lng0: number, dLat = 0) => [
   [lng0 + 0.001, 12 + dLat],
   [lng0 + 0.002, 12 + dLat],
 ];
-const raw = (distance: number, coords: number[][]) => ({
+const raw = (distance: number, coords: number[][], duration?: number) => ({
   distance,
+  ...(duration !== undefined ? { duration } : {}),
   geometry: { coordinates: coords },
 });
 
@@ -52,6 +53,22 @@ test("parseRoutes keeps valid routes (max 3) and drops malformed ones", () => {
   );
   assert.deepEqual(parseRoutes(null, "walk"), []);
   assert.deepEqual(parseRoutes({ routes: "x" }, "walk"), []);
+});
+
+test("parseRoutes keeps server durations only when valid", () => {
+  assert.equal(
+    parseRoutes({ routes: [raw(1000, line(77), 620)] }, "walk")[0].duration,
+    620,
+  );
+  assert.equal(
+    parseRoutes({ routes: [raw(1000, line(77))] }, "walk")[0].duration,
+    undefined,
+  );
+  assert.equal(
+    parseRoutes({ routes: [raw(1000, line(77), Number.NaN)] }, "walk")[0]
+      .duration,
+    undefined,
+  );
 });
 
 test("first walking route is Best; duplicates are dropped", () => {
@@ -112,3 +129,4 @@ test("spatial duplicate detection matches pairwise reference including negative 
     assert.equal(buildOptions(routes,undefined).length, overlap(a,b) < 0.9 ? 2 : 1);
   }
 });
+

@@ -7,6 +7,7 @@ export type RouteOption = {
   label: string;
   coords: number[][];
   distance: number;
+  duration?: number; // seconds, when the server reports one
 };
 
 const BASE = "https://routing.openstreetmap.de";
@@ -37,7 +38,11 @@ function validCoords(c: unknown): c is number[][] {
   );
 }
 
-type Raw = { distance?: unknown; geometry?: { coordinates?: unknown } };
+type Raw = {
+  distance?: unknown;
+  duration?: unknown;
+  geometry?: { coordinates?: unknown };
+};
 
 // Returns only well-formed routes, in server order (the server's best route first).
 export function parseRoutes(data: unknown, kind: RouteKind): RouteOption[] {
@@ -53,6 +58,9 @@ export function parseRoutes(data: unknown, kind: RouteKind): RouteOption[] {
       label: "",
       coords,
       distance: r.distance as number,
+      ...(Number.isFinite(r.duration) && (r.duration as number) > 0
+        ? { duration: r.duration as number }
+        : {}),
     });
   }
   return out;
@@ -114,3 +122,4 @@ export function buildOptions(
     };
   });
 }
+

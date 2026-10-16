@@ -22,8 +22,13 @@ export function distance(a: Point, b: Point) {
 export const distanceLabel = (m: number) =>
   m < 1000 ? `${Math.round(m / 5) * 5} m` : `${(m / 1000).toFixed(1)} km`;
 export const walkLabel = (m: number) => Math.max(1, Math.round(m / 83.3));
-export const mapsUrl = (p: Point) =>
-  `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=walking`;
+/** Rough driving time at a 30 km/h urban average; routed-car replaces it when online. */
+export const driveLabel = (m: number) => Math.max(1, Math.round(m / 500));
+/** Whole minutes from a server route duration in seconds. */
+export const durationMinutes = (seconds: number) =>
+  Math.max(1, Math.round(seconds / 60));
+export const mapsUrl = (p: Point, travel: "walking" | "driving" = "walking") =>
+  `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=${travel}`;
 export function validSpot(s: unknown): s is Spot {
   if (!s || typeof s !== "object") return false;
   const p = s as Spot;
@@ -40,3 +45,4 @@ export function validSpot(s: unknown): s is Spot {
 }
 export const routeSummary = (m: number) =>
   `${walkLabel(m)} min · ${distanceLabel(m)}`;
+
